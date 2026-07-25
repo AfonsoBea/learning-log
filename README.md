@@ -26,3 +26,13 @@ First real session on [OverTheWire Bandit](https://overthewire.org/wargames/band
 **Takeaway:** shell argument-splitting (spaces) and a command's own flag-vs-filename parsing (leading `-`/`--`) are two independent layers a filename can trip — separately or at the same time. The fixes don't conflict; they compose.
 
 Next: Bandit level 3+.
+
+### 2026-07-25 — Bandit levels 3-5
+
+- **Level 3**: the password was in `inhere`, which looked empty under a plain `ls`. Linux hides any file starting with `.` (a dotfile) from the default listing — `ls -a` reveals them, including the two special entries every directory has: `.` (reference to the current directory) and `..` (reference to the parent directory, one level up — not a fixed "home", it's relative to wherever you are). Found `...Hiding-From-You`, read it the same way as level 1's leading-dash file: `cat ./...Hiding-From-You`.
+- **Level 4**: 10 candidate files (`-file00` to `-file09`), only one human-readable. Opening each blindly risks dumping binary garbage to the terminal, so used `file ./*` to inspect content/type without opening anything. Ruled out `OpenPGP Secret Key` (a structured crypto format, not prose) and `Non-ISO extended-ASCII text, with NEL line terminators` (technically text, but a non-standard encoding not guaranteed to render cleanly) in favor of the one flagged as plain `ASCII text` — the simplest, most universal text encoding.
+- **Level 5**: password buried somewhere under `inhere`'s subdirectories, defined only by properties (human-readable, exactly 1033 bytes, not executable) — manually walking the tree doesn't scale. `find` searches a whole directory tree by combinable criteria: `find ~/inhere -type f -size 1033c ! -executable`. Each flag is independent and swappable — e.g. dropping `-size 1033c` removes the size filter, flipping `! -executable` to `-executable` searches for executables instead.
+
+**Takeaway:** all three levels are the same underlying lesson — Linux's default command output never shows everything that exists; it's incomplete by design, not by accident. `ls` hides dotfiles unless told `-a`, a plain look at a file says nothing about its real type until `file` inspects it, and manual browsing doesn't scale once criteria get specific enough to need `find`. The reflex going forward: when something "isn't there," ask what the default output is choosing not to show, not whether it exists.
+
+Next: Bandit level 6+.
