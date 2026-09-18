@@ -9,7 +9,7 @@ Each entry documents the reasoning behind a solution, including the attempts tha
 | Track | Status |
 |---|---|
 | Environment setup | Complete |
-| [OverTheWire Bandit](https://overthewire.org/wargames/bandit/) | Levels 0–9 complete |
+| [OverTheWire Bandit](https://overthewire.org/wargames/bandit/) | Levels 0–11 complete |
 
 ## Entries
 
@@ -21,6 +21,8 @@ Each entry documents the reasoning behind a solution, including the attempts tha
 | 2026-08-06 | [Bandit levels 6–7](#2026-08-06--bandit-levels-67) | `find` from root, stderr redirection, `grep` |
 | 2026-08-07 | [Bandit level 8](#2026-08-07--bandit-level-8) | `sort`, `uniq` |
 | 2026-09-18 | [Bandit level 9](#2026-09-18--bandit-level-9) | Binary files, `strings`, pipes |
+| 2026-09-18 | [Bandit level 10](#2026-09-18--bandit-level-10) | Base64, encoding vs encryption |
+| 2026-09-18 | [Bandit level 11](#2026-09-18--bandit-level-11) | ROT13, `tr`, positional mapping |
 
 ---
 
@@ -193,3 +195,76 @@ strings data.txt | grep "=="
 **Takeaway:** as in level 8, the solution is a pipeline in which each tool does one job: first prepare the data (`sort`, `strings`), then filter it (`uniq -u`, `grep`).
 
 **Next:** Bandit level 10.
+
+---
+
+## 2026-09-18 — Bandit level 10
+
+The password was in `data.txt`, which contains Base64-encoded data.
+
+### What Base64 is
+
+Base64 represents any sequence of bytes using only 64 characters: `A–Z`, `a–z`, `0–9`, `+` and `/`. It works in blocks of 3 bytes, each written as 4 characters, so encoded data is roughly a third larger than the original. The `=` at the end is padding, used when the input length is not a multiple of 3.
+
+Its purpose is compatibility. Protocols such as email (SMTP), URLs, JSON and HTTP headers were designed to carry text, and raw bytes can be altered or misinterpreted in transit. Encoding them as Base64 lets binary data pass through these channels unchanged.
+
+It provides no confidentiality. There is no key, and anyone can decode it with a single command. This matters in practice: Kubernetes Secrets, for example, store values in Base64 by default, which on its own does not make them secure.
+
+### Solving the level
+
+`file data.txt` reported `ASCII text`, so there was nothing to extract with `strings`. My first working solution was to copy the encoded string by hand into `echo`:
+
+```bash
+echo <encoded string> | base64 --decode
+```
+
+My attempt to avoid the copy, `echo data.txt | base64 --decode`, failed with `invalid input`: `echo` prints its argument literally, so `base64` received the text `data.txt` rather than the file's contents. Reading the file instead solved it:
+
+```bash
+cat data.txt | base64 --decode
+```
+
+`base64` also accepts a filename directly, which removes the need for `cat`:
+
+```bash
+base64 -d data.txt
+```
+
+A detail I had wrong in my notes: `echo -n` suppresses the trailing newline rather than adding one. `echo "Hello" | base64` encodes the newline as well and produces `SGVsbG8K`, while `echo -n "Hello" | base64` produces `SGVsbG8=`. The string in this level ended in `Cg==`, which is an encoded newline.
+
+**Takeaway:** encoding and encryption solve different problems. Encoding makes data safe to transport; encryption makes it unreadable without a key. It also paid off to check the file type first: `file` showed plain text, so the extra filtering step from level 9 was unnecessary.
+
+**Next:** Bandit level 11.
+
+---
+
+## 2026-09-18 — Bandit level 11
+
+The password was in `data.txt`, with every letter rotated by 13 positions (ROT13).
+
+### ROT13
+
+ROT13 is a Caesar cipher with a fixed shift of 13: each letter is replaced by the one 13 places later in the alphabet, so `MARIA` becomes `ZNEVN`. Because the alphabet has 26 letters, applying it twice returns the original text, which makes the same operation both the encoding and the decoding step. Like Base64, it offers no protection: the shift is the entire key, and it is public.
+
+### Using `tr`
+
+`rot13` was not installed on the server, so I used `tr`, which replaces each character in a first set with the character in the same position of a second set. Ranges are expanded into lists before the mapping is applied.
+
+| Attempt | Command | Result |
+|---|---|---|
+| 1 | `tr [A-Za-z] [N-Mn-m]` | Error: a range must go from lower to higher, and `N-M` goes backwards |
+| 2 | `tr [A-Za-z] [M-Nm-n]` | Output made almost entirely of `]` |
+| 3 | `tr [A-Za-z] [N-ZA-Nn-za-m]` | `Tgd ozrrvnqc` instead of `The password` |
+| 4 | `tr [A-Za-z] [N-ZA-Mn-za-m]` | Correct |
+
+The third attempt was the most instructive. Uppercase letters were decoded correctly, but every lowercase letter was off by one. The block `A-N` contains 14 letters, not 13, so the second set had 53 characters against 52 in the first. The extra `N` took the position that should have mapped `a` to `n`, and every lowercase letter after it shifted by one. I only found this by counting the letters one by one; my first two estimates were wrong.
+
+The second attempt had a different cause. In `tr`, square brackets are not part of the range syntax; they are treated as literal characters. `[A-Za-z]` is therefore 54 characters, while `[M-Nm-n]` is only 6. When the second set is shorter, `tr` repeats its last character, here `]`, to fill the gap. The brackets did no harm in the final command only because `[` and `]` sat in matching positions in both sets. Unquoted brackets can also be expanded by the shell as a filename pattern, so the correct form uses quotes and no brackets:
+
+```bash
+tr 'A-Za-z' 'N-ZA-Mn-za-m' < data.txt
+```
+
+**Takeaway:** `tr` maps characters by position, not by intent. Any tool that works this way fails through misalignment, and the typical symptom is output that is almost right and drifts from a certain point onward. When that happens, check the counts instead of assuming them.
+
+**Next:** Bandit level 12.
